@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS IOT messages will be stored in an S3 Bucket
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Default: dirkjkb-iot-test-bucket
+
+  TopicRuleName:
+    Type: String
+    Default: s3StoreRule
+
+  ActivateClientFunctionName:
+    Type: String
+    Default: ActivateClientFunction
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Suspended
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  S3BucketStoreRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - iot.amazonaws.com
+          Action:
+            - sts:AssumeRole
+
+  S3BucketStoreRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: S3BucketStoreRolePolicy
+      Roles:
+        - !Ref S3BucketStoreRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: StoreObjects
+            Effect: Allow
+            Action: s3:PutObject
+            Resource: !Sub "arn:aws:s3:::${S3BucketName}/*"
+
+  TopicRule:
+    Type: AWS::IoT::TopicRule
+    Properties:
+      RuleName: !Ref TopicRuleName
+      TopicRulePayload:
+        Sql: SELECT * FROM 'test/test-topic'
+        RuleDisabled: false
+        Actions:
+          - S3:
+              BucketName: !Ref S3Bucket
+              Key: ${topic()}/${timestamp()}
+              RoleArn: !GetAtt S3BucketStoreRole.Arn
+
+  JITPRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: JITPRole
+      Description: Role that is used for the just in time device registration
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - iot.amazonaws.com
+          Action:
+            - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSIoTThingsRegistration
+        - arn:aws:iam::aws:policy/service-role/AWSIoTLogging
+        - arn:aws:iam::aws:policy/service-role/AWSIoTRuleActions
